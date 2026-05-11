@@ -197,7 +197,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
 
         val fields = arrayListOf<CustomField>()
         for (i in 0 until customFields.size()) {
-          val item = customFields.getMap(i)
+          val item = customFields.getMap(i) ?: continue
           val key = item.getString("key") ?: continue
           val value = item.getString("value") ?: continue
           val fieldId = key.trim().removeSuffix("L").toLongOrNull() ?: continue

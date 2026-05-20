@@ -212,7 +212,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
           val item = customFields.getMap(i) ?: continue
           val key = item.getString("key") ?: continue
           val value = item.getString("value") ?: continue
-          val fieldId = key.trim().removeSuffix("L").toLongOrNull() ?: continue
+          val fieldId = key.trim().removeSuffix("L").removeSuffix("l").toLongOrNull() ?: continue
           fields.add(CustomField(fieldId, value))
         }
 
@@ -368,9 +368,10 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       return
     }
 
-    val file = File(filePath)
+    val path = if (filePath.startsWith("file://")) filePath.substring(7) else filePath
+    val file = File(path)
     if (!file.exists()) {
-      promise.reject("E_ZENDESK_FILE", "File not found: $filePath")
+      promise.reject("E_ZENDESK_FILE", "File not found: $path")
       return
     }
 
@@ -513,7 +514,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
           val item = customFields.getMap(i) ?: continue
           val key = item.getString("key") ?: continue
           val value = item.getString("value") ?: continue
-          val fieldId = key.trim().removeSuffix("L").toLongOrNull() ?: continue
+          val fieldId = key.trim().removeSuffix("L").removeSuffix("l").toLongOrNull() ?: continue
           fields.add(CustomField(fieldId, value))
         }
         setCustomFields(fields)

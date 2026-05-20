@@ -512,9 +512,13 @@ RCT_EXPORT_METHOD(uploadAttachment
     return;
   }
 
-  NSData *fileData = [NSData dataWithContentsOfFile:filePath];
+  NSString *path = filePath;
+  if ([path hasPrefix:@"file://"]) {
+    path = [path substringFromIndex:7];
+  }
+  NSData *fileData = [NSData dataWithContentsOfFile:path];
   if (fileData == nil) {
-    reject(@"E_ZENDESK_FILE", [NSString stringWithFormat:@"File not found: %@", filePath], nil);
+    reject(@"E_ZENDESK_FILE", [NSString stringWithFormat:@"File not found: %@", path], nil);
     return;
   }
 

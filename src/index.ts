@@ -2,6 +2,8 @@ import NativeZendesk, {
   type ZendeskConfig,
   type ZendeskCustomField,
   type ZendeskTicketRequest,
+  type ZendeskRequest,
+  type ZendeskComment,
 } from './specs/NativeZendesk';
 export { ZendeskHelpCenterView } from './ZendeskHelpCenterView';
 
@@ -54,4 +56,20 @@ export async function openZendeskContactSupportWithDetails(
   return NativeZendesk.openContactSupportWithDetails(email, customFields);
 }
 
-export type { ZendeskCustomField };
+export async function getZendeskLatestRequest(): Promise<ZendeskRequest | null> {
+  return NativeZendesk.getLatestRequest();
+}
+
+export async function getZendeskRequestComments(requestId: string): Promise<ZendeskComment[]> {
+  return NativeZendesk.getRequestComments(requestId);
+}
+
+export async function addZendeskComment(requestId: string, comment: string): Promise<ZendeskComment> {
+  return NativeZendesk.addCommentToRequest(requestId, comment);
+}
+
+export async function createZendeskRequest(subject: string, description: string): Promise<ZendeskRequest> {
+  return NativeZendesk.createRequestWithComment(subject, description);
+}
+
+export type { ZendeskCustomField, ZendeskRequest, ZendeskComment };

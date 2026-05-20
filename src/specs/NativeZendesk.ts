@@ -25,6 +25,29 @@ export type ZendeskCustomField = {
   value: string;
 };
 
+export type ZendeskRequest = {
+  id: string;
+  subject: string;
+  description: string;
+  status: 'new' | 'open' | 'pending' | 'hold' | 'solved' | 'closed';
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ZendeskAttachment = {
+  url: string;
+  filename: string;
+  contentType: string;
+};
+
+export type ZendeskComment = {
+  id: string;
+  body: string;
+  authorId: string;
+  createdAt: string;
+  attachments?: ZendeskAttachment[];
+};
+
 export interface Spec extends TurboModule {
   initialize(config: ZendeskConfig): Promise<boolean>;
   getArticles(
@@ -48,6 +71,10 @@ export interface Spec extends TurboModule {
     email: string,
     customFields: ReadonlyArray<ZendeskCustomField>
   ): Promise<boolean>;
+  getLatestRequest(): Promise<ZendeskRequest | null>;
+  getRequestComments(requestId: string): Promise<ZendeskComment[]>;
+  addCommentToRequest(requestId: string, comment: string): Promise<ZendeskComment>;
+  createRequestWithComment(subject: string, description: string): Promise<ZendeskRequest>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('RNZendesk');

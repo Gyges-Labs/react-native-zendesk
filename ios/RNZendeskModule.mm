@@ -500,6 +500,175 @@ RCT_EXPORT_METHOD(openContactSupportWithDetails
   return [NSString stringWithFormat:@"Basic %@", encoded];
 }
 
+RCT_EXPORT_METHOD(getLatestRequest
+                  : (RCTPromiseResolveBlock)resolve reject
+                  : (RCTPromiseRejectBlock)reject)
+{
+  if (!self.sdkInitialized) {
+    reject(@"E_ZENDESK_NOT_INIT", @"Zendesk SDK not initialized", nil);
+    return;
+  }
+
+  ZDKRequestProvider *provider = [ZDKRequestProvider new];
+  [provider getAllRequestsWithCallback:^(NSArray<ZDKRequest *> *requests, NSError *error) {
+    if (error) {
+      reject(@"E_ZENDESK_REQUEST", error.localizedDescription, error);
+      return;
+    }
+
+    NSPredicate *predicate = [NSPredicate predicateWithBlock:^BOOL(ZDKRequest *request, NSDictionary *bindings) {
+      return ![request.status.lowercaseString isEqualToString:@"closed"];
+    }];
+    NSArray *activeRequests = [requests filteredArrayUsingPredicate:predicate];
+
+    if (activeRequests.count == 0) {
+      resolve([NSNull null]);
+      return;
+    }
+
+    NSSortDescriptor *sortDescriptor = [NSSortDescriptor sortDescriptorWithKey:@"updatedAt" ascending:NO];
+    NSArray *sorted = [activeRequests sortedArrayUsingDescriptors:@[sortDescriptor]];
+    ZDKRequest *latest = sorted.firstObject;
+
+    resolve([self mapRequestToDictionary:latest]);
+  }];
+}
+
+RCT_EXPORT_METHOD(getRequestComments
+                  : (NSString *)requestId resolve
+                  : (RCTPromiseResolveBlock)resolve reject
+                  : (RCTPromiseRejectBlock)reject)
+{
+  if (!self.sdkInitialized) {
+    reject(@"E_ZENDESK_NOT_INIT", @"Zendesk SDK not initialized", nil);
+    return;
+  }
+
+  ZDKRequestProvider *provider = [ZDKRequestProvider new];
+  [provider getCommentsWithRequestId:requestId callback:^(NSArray<ZDKCommentResponse *> *comments, NSError *error) {
+    if (error) {
+      reject(@"E_ZENDESK_COMMENTS", error.localizedDescription, error);
+      return;
+    }
+
+    NSMutableArray *result = [NSMutableArray array];
+    for (ZDKCommentResponse *comment in comments) {
+      [result addObject:[self mapCommentToDictionary:comment]];
+    }
+    resolve(result);
+  }];
+}
+
+RCT_EXPORT_METHOD(addCommentToRequest
+                  : (NSString *)requestId comment
+                  : (NSString *)comment resolve
+                  : (RCTPromiseResolveBlock)resolve reject
+                  : (RCTPromiseRejectBlock)reject)
+{
+  if (!self.sdkInitialized) {
+    reject(@"E_ZENDESK_NOT_INIT", @"Zendesk SDK not initialized", nil);
+    return;
+  }
+
+  ZDKRequestProvider *provider = [ZDKRequestProvider new];
+  [provider addComment:comment requestId:requestId attachments:nil callback:^(ZDKComment *result, NSError *error) {
+    if (error) {
+      reject(@"E_ZENDESK_ADD_COMMENT", error.localizedDescription, error);
+      return;
+    }
+    resolve([self mapZDKCommentToDictionary:result]);
+  }];
+}
+
+RCT_EXPORT_METHOD(createRequestWithComment
+                  : (NSString *)subject description
+                  : (NSString *)description resolve
+                  : (RCTPromiseResolveBlock)resolve reject
+                  : (RCTPromiseRejectBlock)reject)
+{
+  if (!self.sdkInitialized) {
+    reject(@"E_ZENDESK_NOT_INIT", @"Zendesk SDK not initialized", nil);
+    return;
+  }
+
+  ZDKRequestProvider *provider = [ZDKRequestProvider new];
+  ZDKCreateRequest *createRequest = [[ZDKCreateRequest alloc] init];
+  createRequest.subject = subject;
+  createRequest.requestDescription = description;
+
+  [provider createRequest:createRequest callback:^(ZDKRequest *result, NSError *error) {
+    if (error) {
+      reject(@"E_ZENDESK_CREATE_REQUEST", error.localizedDescription, error);
+      return;
+    }
+    resolve([self mapRequestToDictionary:result]);
+  }];
+}
+
+- (NSDictionary *)mapRequestToDictionary:(ZDKRequest *)request
+{
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
+  formatter.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+
+  return @{
+    @"id": request.requestId ?: @"",
+    @"subject": request.subject ?: @"",
+    @"description": request.requestDescription ?: @"",
+    @"status": request.status ?: @"new",
+    @"createdAt": request.createdAt ? [formatter stringFromDate:request.createdAt] : @"",
+    @"updatedAt": request.updatedAt ? [formatter stringFromDate:request.updatedAt] : @""
+  };
+}
+
+- (NSDictionary *)mapCommentToDictionary:(ZDKCommentResponse *)comment
+{
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
+  formatter.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+
+  NSMutableArray *attachments = [NSMutableArray array];
+  for (ZDKAttachment *attachment in comment.attachments) {
+    [attachments addObject:@{
+      @"url": attachment.contentURL ?: @"",
+      @"filename": attachment.fileName ?: @"",
+      @"contentType": attachment.contentType ?: @""
+    }];
+  }
+
+  return @{
+    @"id": comment.identifier ? [NSString stringWithFormat:@"%lld", comment.identifier.longLongValue] : @"",
+    @"body": comment.body ?: @"",
+    @"authorId": comment.authorId ? [NSString stringWithFormat:@"%lld", comment.authorId.longLongValue] : @"",
+    @"createdAt": comment.createdAt ? [formatter stringFromDate:comment.createdAt] : @"",
+    @"attachments": attachments
+  };
+}
+
+- (NSDictionary *)mapZDKCommentToDictionary:(ZDKComment *)comment
+{
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
+  formatter.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+
+  NSMutableArray *attachments = [NSMutableArray array];
+  for (ZDKAttachment *attachment in comment.attachments) {
+    [attachments addObject:@{
+      @"url": attachment.contentURL ?: @"",
+      @"filename": attachment.fileName ?: @"",
+      @"contentType": attachment.contentType ?: @""
+    }];
+  }
+
+  return @{
+    @"id": comment.identifier ? [NSString stringWithFormat:@"%lld", comment.identifier.longLongValue] : @"",
+    @"body": comment.body ?: @"",
+    @"authorId": comment.authorId ? [NSString stringWithFormat:@"%lld", comment.authorId.longLongValue] : @"",
+    @"createdAt": comment.createdAt ? [formatter stringFromDate:comment.createdAt] : @"",
+    @"attachments": attachments
+  };
+}
+
 #ifdef RCT_NEW_ARCH_ENABLED
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params

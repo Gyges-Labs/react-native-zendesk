@@ -48,6 +48,10 @@ export type ZendeskComment = {
   attachments?: ZendeskAttachment[];
 };
 
+export type ZendeskUploadResponse = {
+  token: string;
+};
+
 export interface Spec extends TurboModule {
   initialize(config: ZendeskConfig): Promise<boolean>;
   getArticles(
@@ -73,8 +77,22 @@ export interface Spec extends TurboModule {
   ): Promise<boolean>;
   getLatestRequest(): Promise<ZendeskRequest | null>;
   getRequestComments(requestId: string): Promise<ZendeskComment[]>;
-  addCommentToRequest(requestId: string, comment: string): Promise<ZendeskComment>;
-  createRequestWithComment(subject: string, description: string): Promise<ZendeskRequest>;
+  uploadAttachment(
+    filePath: string,
+    fileName: string,
+    mimeType: string
+  ): Promise<ZendeskUploadResponse>;
+  addCommentToRequest(
+    requestId: string,
+    comment: string,
+    attachmentTokens?: string[]
+  ): Promise<ZendeskComment>;
+  createRequestWithComment(
+    subject: string,
+    description: string,
+    customFields?: ReadonlyArray<ZendeskCustomField>,
+    attachmentTokens?: string[]
+  ): Promise<ZendeskRequest>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('RNZendesk');

@@ -500,6 +500,37 @@ RCT_EXPORT_METHOD(openContactSupportWithDetails
   return [NSString stringWithFormat:@"Basic %@", encoded];
 }
 
+RCT_EXPORT_METHOD(uploadAttachment
+                  : (NSString *)filePath fileName
+                  : (NSString *)fileName mimeType
+                  : (NSString *)mimeType resolve
+                  : (RCTPromiseResolveBlock)resolve reject
+                  : (RCTPromiseRejectBlock)reject)
+{
+  if (!self.sdkInitialized) {
+    reject(@"E_ZENDESK_NOT_INIT", @"Zendesk SDK not initialized", nil);
+    return;
+  }
+
+  NSData *fileData = [NSData dataWithContentsOfFile:filePath];
+  if (fileData == nil) {
+    reject(@"E_ZENDESK_FILE", [NSString stringWithFormat:@"File not found: %@", filePath], nil);
+    return;
+  }
+
+  ZDKUploadProvider *provider = [[ZDKUploadProvider alloc] init];
+  [provider uploadAttachment:fileData
+                withFilename:fileName
+              andContentType:mimeType
+                    callback:^(ZDKUploadResponse *response, NSError *error) {
+    if (error) {
+      reject(@"E_ZENDESK_UPLOAD", error.localizedDescription, error);
+      return;
+    }
+    resolve(@{@"token": response.uploadToken ?: @""});
+  }];
+}
+
 RCT_EXPORT_METHOD(getLatestRequest
                   : (RCTPromiseResolveBlock)resolve reject
                   : (RCTPromiseRejectBlock)reject)
@@ -561,7 +592,8 @@ RCT_EXPORT_METHOD(getRequestComments
 
 RCT_EXPORT_METHOD(addCommentToRequest
                   : (NSString *)requestId comment
-                  : (NSString *)comment resolve
+                  : (NSString *)comment attachmentTokens
+                  : (NSArray<NSString *> *)attachmentTokens resolve
                   : (RCTPromiseResolveBlock)resolve reject
                   : (RCTPromiseRejectBlock)reject)
 {
@@ -571,7 +603,18 @@ RCT_EXPORT_METHOD(addCommentToRequest
   }
 
   ZDKRequestProvider *provider = [ZDKRequestProvider new];
-  [provider addComment:comment requestId:requestId attachments:nil callback:^(ZDKComment *result, NSError *error) {
+
+  NSArray<ZDKUploadResponse *> *uploadResponses = nil;
+  if (attachmentTokens != nil && attachmentTokens.count > 0) {
+    NSMutableArray<ZDKUploadResponse *> *responses = [NSMutableArray array];
+    for (NSString *token in attachmentTokens) {
+      ZDKUploadResponse *response = [[ZDKUploadResponse alloc] initWithUploadToken:token attachment:nil];
+      [responses addObject:response];
+    }
+    uploadResponses = responses;
+  }
+
+  [provider addComment:comment requestId:requestId attachments:uploadResponses callback:^(ZDKComment *result, NSError *error) {
     if (error) {
       reject(@"E_ZENDESK_ADD_COMMENT", error.localizedDescription, error);
       return;
@@ -582,7 +625,9 @@ RCT_EXPORT_METHOD(addCommentToRequest
 
 RCT_EXPORT_METHOD(createRequestWithComment
                   : (NSString *)subject description
-                  : (NSString *)description resolve
+                  : (NSString *)description customFields
+                  : (NSArray<NSDictionary *> *)customFields attachmentTokens
+                  : (NSArray<NSString *> *)attachmentTokens resolve
                   : (RCTPromiseResolveBlock)resolve reject
                   : (RCTPromiseRejectBlock)reject)
 {
@@ -595,6 +640,33 @@ RCT_EXPORT_METHOD(createRequestWithComment
   ZDKCreateRequest *createRequest = [[ZDKCreateRequest alloc] init];
   createRequest.subject = subject;
   createRequest.requestDescription = description;
+
+  if (customFields != nil && customFields.count > 0) {
+    NSMutableArray<ZDKCustomField *> *fields = [NSMutableArray array];
+    for (NSDictionary *item in customFields) {
+      NSString *key = [RCTConvert NSString:item[@"key"]];
+      NSString *value = [RCTConvert NSString:item[@"value"]];
+      if (key.length == 0 || value.length == 0) {
+        continue;
+      }
+      NSString *keyTrimmed = [key stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+      if ([keyTrimmed hasSuffix:@"L"] || [keyTrimmed hasSuffix:@"l"]) {
+        keyTrimmed = [keyTrimmed substringToIndex:keyTrimmed.length - 1];
+      }
+      NSNumber *fieldId = @(keyTrimmed.longLongValue);
+      [fields addObject:[[ZDKCustomField alloc] initWithFieldId:fieldId value:value]];
+    }
+    createRequest.customFields = fields;
+  }
+
+  if (attachmentTokens != nil && attachmentTokens.count > 0) {
+    NSMutableArray<ZDKUploadResponse *> *responses = [NSMutableArray array];
+    for (NSString *token in attachmentTokens) {
+      ZDKUploadResponse *response = [[ZDKUploadResponse alloc] initWithUploadToken:token attachment:nil];
+      [responses addObject:response];
+    }
+    createRequest.attachments = responses;
+  }
 
   [provider createRequest:createRequest callback:^(ZDKRequest *result, NSError *error) {
     if (error) {

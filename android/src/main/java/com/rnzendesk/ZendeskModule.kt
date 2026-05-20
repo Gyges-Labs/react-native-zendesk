@@ -33,8 +33,10 @@ import zendesk.support.CommentsResponse
 import zendesk.support.CreateRequest
 import zendesk.support.EndUserComment
 import zendesk.support.Attachment
+import zendesk.support.UploadResponse
 import com.zendesk.service.ErrorResponse
 import com.facebook.react.bridge.WritableMap
+import java.io.File
 
 @ReactModule(name = ZendeskModule.NAME)
 class ZendeskModule(reactContext: ReactApplicationContext) :
@@ -349,6 +351,42 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun uploadAttachment(
+    filePath: String,
+    fileName: String,
+    mimeType: String,
+    promise: Promise
+  ) {
+    if (!sdkInitialized) {
+      promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
+      return
+    }
+
+    val provider = Support.INSTANCE.provider()?.uploadProvider()
+    if (provider == null) {
+      promise.reject("E_ZENDESK_PROVIDER", "UploadProvider not available")
+      return
+    }
+
+    val file = File(filePath)
+    if (!file.exists()) {
+      promise.reject("E_ZENDESK_FILE", "File not found: $filePath")
+      return
+    }
+
+    provider.uploadAttachment(fileName, file, mimeType, object : ZendeskCallback<UploadResponse>() {
+      override fun onSuccess(response: UploadResponse) {
+        val map = Arguments.createMap()
+        map.putString("token", response.token ?: "")
+        promise.resolve(map)
+      }
+
+      override fun onError(error: ErrorResponse) {
+        promise.reject("E_ZENDESK_UPLOAD", error.getReason() ?: "Upload failed")
+      }
+    })
+  }
+
   override fun getLatestRequest(promise: Promise) {
     if (!sdkInitialized) {
       promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
@@ -408,7 +446,12 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
     })
   }
 
-  override fun addCommentToRequest(requestId: String, comment: String, promise: Promise) {
+  override fun addCommentToRequest(
+    requestId: String,
+    comment: String,
+    attachmentTokens: ReadableArray?,
+    promise: Promise
+  ) {
     if (!sdkInitialized) {
       promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
       return
@@ -420,7 +463,16 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       return
     }
 
-    val endUserComment = EndUserComment().apply { setValue(comment) }
+    val endUserComment = EndUserComment().apply {
+      setValue(comment)
+      if (attachmentTokens != null && attachmentTokens.size() > 0) {
+        val tokens = mutableListOf<String>()
+        for (i in 0 until attachmentTokens.size()) {
+          attachmentTokens.getString(i)?.let { tokens.add(it) }
+        }
+        setAttachments(tokens)
+      }
+    }
 
     provider.addComment(requestId, endUserComment, object : ZendeskCallback<Comment>() {
       override fun onSuccess(result: Comment) {
@@ -433,7 +485,13 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
     })
   }
 
-  override fun createRequestWithComment(subject: String, description: String, promise: Promise) {
+  override fun createRequestWithComment(
+    subject: String,
+    description: String,
+    customFields: ReadableArray?,
+    attachmentTokens: ReadableArray?,
+    promise: Promise
+  ) {
     if (!sdkInitialized) {
       promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
       return
@@ -448,6 +506,26 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
     val createRequest = CreateRequest().apply {
       setSubject(subject)
       setDescription(description)
+
+      if (customFields != null && customFields.size() > 0) {
+        val fields = mutableListOf<CustomField>()
+        for (i in 0 until customFields.size()) {
+          val item = customFields.getMap(i) ?: continue
+          val key = item.getString("key") ?: continue
+          val value = item.getString("value") ?: continue
+          val fieldId = key.trim().removeSuffix("L").toLongOrNull() ?: continue
+          fields.add(CustomField(fieldId, value))
+        }
+        setCustomFields(fields)
+      }
+
+      if (attachmentTokens != null && attachmentTokens.size() > 0) {
+        val tokens = mutableListOf<String>()
+        for (i in 0 until attachmentTokens.size()) {
+          attachmentTokens.getString(i)?.let { tokens.add(it) }
+        }
+        setAttachments(tokens)
+      }
     }
 
     provider.createRequest(createRequest, object : ZendeskCallback<ZendeskRequest>() {

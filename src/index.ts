@@ -4,6 +4,7 @@ import NativeZendesk, {
   type ZendeskTicketRequest,
   type ZendeskRequest,
   type ZendeskComment,
+  type ZendeskUploadResponse,
 } from './specs/NativeZendesk';
 export { ZendeskHelpCenterView } from './ZendeskHelpCenterView';
 
@@ -64,12 +65,36 @@ export async function getZendeskRequestComments(requestId: string): Promise<Zend
   return NativeZendesk.getRequestComments(requestId);
 }
 
-export async function addZendeskComment(requestId: string, comment: string): Promise<ZendeskComment> {
-  return NativeZendesk.addCommentToRequest(requestId, comment);
+export async function uploadZendeskAttachment(
+  filePath: string,
+  fileName: string,
+  mimeType: string
+): Promise<ZendeskUploadResponse> {
+  return NativeZendesk.uploadAttachment(filePath, fileName, mimeType);
 }
 
-export async function createZendeskRequest(subject: string, description: string): Promise<ZendeskRequest> {
-  return NativeZendesk.createRequestWithComment(subject, description);
+export async function addZendeskComment(
+  requestId: string,
+  comment: string,
+  attachmentTokens?: string[]
+): Promise<ZendeskComment> {
+  return NativeZendesk.addCommentToRequest(requestId, comment, attachmentTokens);
 }
 
-export type { ZendeskCustomField, ZendeskRequest, ZendeskComment };
+export async function createZendeskRequest(
+  subject: string,
+  description: string,
+  options?: {
+    customFields?: ZendeskCustomField[];
+    attachmentTokens?: string[];
+  }
+): Promise<ZendeskRequest> {
+  return NativeZendesk.createRequestWithComment(
+    subject,
+    description,
+    options?.customFields,
+    options?.attachmentTokens
+  );
+}
+
+export type { ZendeskCustomField, ZendeskRequest, ZendeskComment, ZendeskUploadResponse };

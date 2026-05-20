@@ -19,12 +19,22 @@ import java.util.Base64
 import java.util.concurrent.Executors
 import zendesk.core.AnonymousIdentity
 import zendesk.core.Zendesk
+import zendesk.core.ZendeskCallback
 import zendesk.support.CustomField
 import zendesk.support.Support
 import zendesk.support.guide.HelpCenterActivity
 import zendesk.support.guide.ViewArticleActivity
 import zendesk.support.request.RequestActivity
 import zendesk.support.requestlist.RequestListActivity
+import zendesk.support.Request as ZendeskRequest
+import zendesk.support.Comment
+import zendesk.support.CommentResponse
+import zendesk.support.CommentsResponse
+import zendesk.support.CreateRequest
+import zendesk.support.EndUserComment
+import zendesk.support.Attachment
+import zendesk.core.ErrorResponse
+import com.facebook.react.bridge.WritableMap
 
 @ReactModule(name = ZendeskModule.NAME)
 class ZendeskModule(reactContext: ReactApplicationContext) :
@@ -337,5 +347,168 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
     } catch (_: Exception) {
       null
     }
+  }
+
+  override fun getLatestRequest(promise: Promise) {
+    if (!sdkInitialized) {
+      promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
+      return
+    }
+
+    val provider = Support.INSTANCE.provider()?.requestProvider()
+    if (provider == null) {
+      promise.reject("E_ZENDESK_PROVIDER", "RequestProvider not available")
+      return
+    }
+
+    provider.getAllRequests(object : ZendeskCallback<List<ZendeskRequest>>() {
+      override fun onSuccess(requests: List<ZendeskRequest>) {
+        val latest = requests
+          .filter { it.status?.name?.lowercase() != "closed" }
+          .maxByOrNull { it.updatedAt ?: java.util.Date(0) }
+
+        if (latest == null) {
+          promise.resolve(null)
+          return
+        }
+
+        promise.resolve(mapRequestToWritableMap(latest))
+      }
+
+      override fun onError(error: ErrorResponse) {
+        promise.reject("E_ZENDESK_REQUEST", error.reason ?: "Unknown error")
+      }
+    })
+  }
+
+  override fun getRequestComments(requestId: String, promise: Promise) {
+    if (!sdkInitialized) {
+      promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
+      return
+    }
+
+    val provider = Support.INSTANCE.provider()?.requestProvider()
+    if (provider == null) {
+      promise.reject("E_ZENDESK_PROVIDER", "RequestProvider not available")
+      return
+    }
+
+    provider.getComments(requestId, object : ZendeskCallback<CommentsResponse>() {
+      override fun onSuccess(response: CommentsResponse) {
+        val array = Arguments.createArray()
+        response.comments.forEach { comment ->
+          array.pushMap(mapCommentResponseToWritableMap(comment))
+        }
+        promise.resolve(array)
+      }
+
+      override fun onError(error: ErrorResponse) {
+        promise.reject("E_ZENDESK_COMMENTS", error.reason ?: "Unknown error")
+      }
+    })
+  }
+
+  override fun addCommentToRequest(requestId: String, comment: String, promise: Promise) {
+    if (!sdkInitialized) {
+      promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
+      return
+    }
+
+    val provider = Support.INSTANCE.provider()?.requestProvider()
+    if (provider == null) {
+      promise.reject("E_ZENDESK_PROVIDER", "RequestProvider not available")
+      return
+    }
+
+    val endUserComment = EndUserComment.Builder(comment).build()
+
+    provider.addComment(requestId, endUserComment, object : ZendeskCallback<Comment>() {
+      override fun onSuccess(result: Comment) {
+        promise.resolve(mapCommentToWritableMap(result))
+      }
+
+      override fun onError(error: ErrorResponse) {
+        promise.reject("E_ZENDESK_ADD_COMMENT", error.reason ?: "Unknown error")
+      }
+    })
+  }
+
+  override fun createRequestWithComment(subject: String, description: String, promise: Promise) {
+    if (!sdkInitialized) {
+      promise.reject("E_ZENDESK_NOT_INIT", "Zendesk SDK not initialized")
+      return
+    }
+
+    val provider = Support.INSTANCE.provider()?.requestProvider()
+    if (provider == null) {
+      promise.reject("E_ZENDESK_PROVIDER", "RequestProvider not available")
+      return
+    }
+
+    val createRequest = CreateRequest.Builder()
+      .withSubject(subject)
+      .withDescription(description)
+      .build()
+
+    provider.createRequest(createRequest, object : ZendeskCallback<ZendeskRequest>() {
+      override fun onSuccess(result: ZendeskRequest) {
+        promise.resolve(mapRequestToWritableMap(result))
+      }
+
+      override fun onError(error: ErrorResponse) {
+        promise.reject("E_ZENDESK_CREATE_REQUEST", error.reason ?: "Unknown error")
+      }
+    })
+  }
+
+  private fun mapRequestToWritableMap(request: ZendeskRequest): WritableMap {
+    val map = Arguments.createMap()
+    map.putString("id", request.id ?: "")
+    map.putString("subject", request.subject ?: "")
+    map.putString("description", request.description ?: "")
+    map.putString("status", request.status?.name?.lowercase() ?: "new")
+    map.putString("createdAt", request.createdAt?.toInstant()?.toString() ?: "")
+    map.putString("updatedAt", request.updatedAt?.toInstant()?.toString() ?: "")
+    return map
+  }
+
+  private fun mapCommentResponseToWritableMap(comment: CommentResponse): WritableMap {
+    val map = Arguments.createMap()
+    map.putString("id", comment.id?.toString() ?: "")
+    map.putString("body", comment.body ?: "")
+    map.putString("authorId", comment.authorId?.toString() ?: "")
+    map.putString("createdAt", comment.createdAt?.toInstant()?.toString() ?: "")
+
+    val attachments = Arguments.createArray()
+    comment.attachments?.forEach { attachment ->
+      val attachmentMap = Arguments.createMap()
+      attachmentMap.putString("url", attachment.contentUrl ?: "")
+      attachmentMap.putString("filename", attachment.fileName ?: "")
+      attachmentMap.putString("contentType", attachment.contentType ?: "")
+      attachments.pushMap(attachmentMap)
+    }
+    map.putArray("attachments", attachments)
+
+    return map
+  }
+
+  private fun mapCommentToWritableMap(comment: Comment): WritableMap {
+    val map = Arguments.createMap()
+    map.putString("id", comment.id?.toString() ?: "")
+    map.putString("body", comment.body ?: "")
+    map.putString("authorId", comment.authorId?.toString() ?: "")
+    map.putString("createdAt", comment.createdAt?.toInstant()?.toString() ?: "")
+
+    val attachments = Arguments.createArray()
+    comment.attachments?.forEach { url ->
+      val attachmentMap = Arguments.createMap()
+      attachmentMap.putString("url", url)
+      attachmentMap.putString("filename", "")
+      attachmentMap.putString("contentType", "")
+      attachments.pushMap(attachmentMap)
+    }
+    map.putArray("attachments", attachments)
+
+    return map
   }
 }

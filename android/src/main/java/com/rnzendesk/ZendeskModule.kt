@@ -19,7 +19,7 @@ import java.util.Base64
 import java.util.concurrent.Executors
 import zendesk.core.AnonymousIdentity
 import zendesk.core.Zendesk
-import zendesk.core.ZendeskCallback
+import com.zendesk.service.ZendeskCallback
 import zendesk.support.CustomField
 import zendesk.support.Support
 import zendesk.support.guide.HelpCenterActivity
@@ -33,7 +33,7 @@ import zendesk.support.CommentsResponse
 import zendesk.support.CreateRequest
 import zendesk.support.EndUserComment
 import zendesk.support.Attachment
-import zendesk.core.ErrorResponse
+import com.zendesk.service.ErrorResponse
 import com.facebook.react.bridge.WritableMap
 
 @ReactModule(name = ZendeskModule.NAME)
@@ -376,7 +376,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       }
 
       override fun onError(error: ErrorResponse) {
-        promise.reject("E_ZENDESK_REQUEST", error.reason ?: "Unknown error")
+        promise.reject("E_ZENDESK_REQUEST", error.getReason() ?: "Unknown error")
       }
     })
   }
@@ -403,7 +403,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       }
 
       override fun onError(error: ErrorResponse) {
-        promise.reject("E_ZENDESK_COMMENTS", error.reason ?: "Unknown error")
+        promise.reject("E_ZENDESK_COMMENTS", error.getReason() ?: "Unknown error")
       }
     })
   }
@@ -420,7 +420,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       return
     }
 
-    val endUserComment = EndUserComment.Builder(comment).build()
+    val endUserComment = EndUserComment().apply { setValue(comment) }
 
     provider.addComment(requestId, endUserComment, object : ZendeskCallback<Comment>() {
       override fun onSuccess(result: Comment) {
@@ -428,7 +428,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       }
 
       override fun onError(error: ErrorResponse) {
-        promise.reject("E_ZENDESK_ADD_COMMENT", error.reason ?: "Unknown error")
+        promise.reject("E_ZENDESK_ADD_COMMENT", error.getReason() ?: "Unknown error")
       }
     })
   }
@@ -445,10 +445,10 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       return
     }
 
-    val createRequest = CreateRequest.Builder()
-      .withSubject(subject)
-      .withDescription(description)
-      .build()
+    val createRequest = CreateRequest().apply {
+      setSubject(subject)
+      setDescription(description)
+    }
 
     provider.createRequest(createRequest, object : ZendeskCallback<ZendeskRequest>() {
       override fun onSuccess(result: ZendeskRequest) {
@@ -456,7 +456,7 @@ class ZendeskModule(reactContext: ReactApplicationContext) :
       }
 
       override fun onError(error: ErrorResponse) {
-        promise.reject("E_ZENDESK_CREATE_REQUEST", error.reason ?: "Unknown error")
+        promise.reject("E_ZENDESK_CREATE_REQUEST", error.getReason() ?: "Unknown error")
       }
     })
   }
